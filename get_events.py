@@ -1,53 +1,31 @@
 #importing the csv,regular expression modules
 import csv
-import pprint
-
+#from pprint import pprint
+from datetime import datetime
+import numpy as np
 #events class
-def format_time(time):
-    time=time.split(':')
-    sec=time[2].split('.')
-    time = [int(time[0]),int(time[1]),int(sec[0]),int(sec[1])]
-    return time
-
+start_datetime = datetime.strptime('2011/10/20 11:58:32.623', '%Y/%m/%d %H:%M:%S.%f')
+#frequency
+freq = 12000
+#seeting the time before and after events
+time_before_event=2
+time_after_event=3
+#evets class
 class event:
     def __init__(self,timestamp,device,phase):
-        self.date,self.time=timestamp.split(' ')
-        self.time = format_time(self.time)
+        self.date_time = (datetime.strptime(timestamp[:23], '%m/%d/%Y %H:%M:%S.%f') - start_datetime).total_seconds()
         self.phase=phase
         self.device=device
         self.file_num=0
+        self.line_num=0
 
     def __str__(self):
-        return 'Device={} Date={} Time={} phase={}'.format(self.device,self.date,self.time,self.phase)
+        return 'Dno=%3s datetime=%12s P=%c Fno=%3d lno%8d'%(self.device,self.date_time,self.phase,self.file_num,self.line_num)
 
-def getfilenum(i):
-    file_num,_i = [0,0,0], list(str(i))
-    len_i=len(_i)-1
-    for n in xrange(3):
-        if n > len_i:
-            break
-        file_num[2-n]= _i[len_i-n]
-    file_num = ''.join( str(e) for e in file_num)
-    return file_num
-
-def event_occurred(t1,t2):
-    t1=t1[:]
-    t2=t2[:]
-    if t1[0]==t2[0]:
-        #print 'H:',t1,t2
-        if t1[1]-t2[1]>=0 and t1[1]-t2[1]<=2:
-            #print 'M:',t1,t2
-            #raw_input()
-            t1[2],t2[2]=t1[1]*60+t1[2],t2[1]*60+t2[2]
-            if t1[2]-t2[2]<=90 and t1[2]-t2[2]>=0:
-                print 'S:',t1,t2
-                #raw_input()
-                return True
-    return False
 
 events=[]
 #opening the csv file and referring  it with the variable f
-with open("location_001_eventslist.txt","rb") as datafile:
+with open("location_001_eventslist.txt","r") as datafile:
     #skipping the first line that contains the headers
     datafile.readline()
     #reading the contents of the file and serepating each line with a delimmiter 'COMMA'
@@ -60,22 +38,34 @@ with open("location_001_eventslist.txt","rb") as datafile:
 print 'Here are the extracted events'
 for e in events:
     print e
-#raw_input()
-
 count = 0
-#getting the starting recording time for each file
+
 for i in xrange(1,401):
-    with open('location_001_ivdata_{}.txt'.format(getfilenum(i)),'rb') as datafile:
-        for n in xrange(15):
-            datafile.readline()
-        date=datafile.readline()[5:]
-        date=date[:10]
-        time=datafile.readline()[5:]
-        time=time[:12]
-        time=format_time(time)
-        #raw_input()
-        for e in events:
-            if event_occurred(e.time,time):
-                e.file_num=i
-                count+=1
-print count,len(events)
+    with open ('location_001_ivdata_%003d.txt'%i,'r') as f:
+        #skipping the first 24 lines (headers)
+        for x in xrange(24):
+            f.readline()
+        #saving the position and reading the first line
+        pos,a = f.tell(),float(f.readline().split(',')[0])
+        #Readoing the last line of the file
+        f.seek(-80,2)
+        b=''
+        while True:
+            c = f.readline()
+            if len(c)==0:
+                break
+            b=c
+        b=float(b.split(',')[0])
+        print "File=%003d START=%00005d END=%00005d EVENT=%00005d" %(i,int(a),int(b),int(events[count].date_time))
+        while events[count].date_time>a and events[count].date_time<b:
+            #get back to the first position
+            f.seek(pos)
+            data = np.loadtxt(f, delimiter=',')
+            max_limit = len(data)
+            start,end = freq*int(events[count].date_time-a-time_before_event),freq*int(events[count].date_time-a+time_after_event)
+            start = start if start>0 else 0
+            end = end if end<max_limit else max_limit-1
+            count+=1
+            np.savetxt("events/{}_{}".format(events[count].device,events[count].date_time),data[start:end],delimiter=',')
+            print "ST=%000006d END=%0000006d LEN=%0000006d Max_LEN=%0000006d" %(start,end,end-start,max_limit)
+print count
